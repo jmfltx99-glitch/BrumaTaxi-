@@ -55,6 +55,8 @@
   .tipo-selector { display:flex; gap:8px; flex-wrap:wrap; }
   .tipo-pill { flex:1; min-width:120px; padding:10px 8px; border-radius:8px; border:1px solid var(--mist-200); background:var(--mist-50); color:var(--slate-600); font-family:var(--font-sans); font-size:12.5px; font-weight:600; cursor:pointer; text-align:center; }
   .tipo-pill.active { background:var(--amber-600); border-color:var(--amber-600); color:var(--white); }
+  .pagamento-pill { flex:1; min-width:120px; padding:10px 8px; border-radius:8px; border:1px solid var(--mist-200); background:var(--mist-50); color:var(--slate-600); font-family:var(--font-sans); font-size:12.5px; font-weight:600; cursor:pointer; text-align:center; }
+  .pagamento-pill.active { background:var(--amber-600); border-color:var(--amber-600); color:var(--white); }
 
   .transfer-fieldset { border:1px dashed var(--mist-200); border-radius:8px; padding:12px; display:flex; flex-direction:column; gap:10px; }
   .fieldset-title { font-family:var(--font-serif); font-size:14.5px; font-weight:600; color:var(--slate-900); }
@@ -185,6 +187,15 @@
         <div class="field">
           <label for="valor">Valor (opcional)</label>
           <input type="number" id="valor" placeholder="R$" min="0" step="0.01">
+        </div>
+      </div>
+      <div class="field">
+        <label>Forma de pagamento</label>
+        <div class="tipo-selector" id="pagamentoSelector">
+          <button type="button" class="pagamento-pill" data-pagamento="Cartão de Crédito">Cartão de Crédito</button>
+          <button type="button" class="pagamento-pill" data-pagamento="Cartão de Débito">Cartão de Débito</button>
+          <button type="button" class="pagamento-pill" data-pagamento="Pix">Pix</button>
+          <button type="button" class="pagamento-pill" data-pagamento="Dinheiro">Dinheiro</button>
         </div>
       </div>
       <div class="field">
@@ -517,6 +528,7 @@
         `Veículo: ${b.out.veiculo || ''}`
       );
     }
+    if (b.formaPagamento) parts.push(`Forma de pagamento combinada: ${b.formaPagamento}`);
     parts.push(config.textoFechamentoConfirmacao);
     parts.push(`Com carinho,\n${config.assinaturaNome}\n*${config.assinaturaEmpresa}*`);
     return parts.join('\n\n');
@@ -526,11 +538,11 @@
     const linhas = [];
     if (b.in) linhas.push(`Transfer In: ${formatDateFull(b.in.data)} às ${b.in.horaChegada || 'horário a confirmar'} (voo ${b.in.voo || 'a confirmar'})`);
     if (b.out) linhas.push(`Transfer Out: ${formatDateFull(b.out.data)} às ${b.out.horaSaida || 'horário a confirmar'} (voo ${b.out.voo || 'a confirmar'})`);
-    return `Olá, ${b.nome}! Passando para lembrar do seu transfer com a BrumaTaxi:\n\n${linhas.join('\n')}\n\nEstaremos no horário combinado. Qualquer dúvida, estou à disposição.\n\nCom carinho,\n${config.assinaturaNome}`;
+    return `Olá, ${b.nome}! Passando para lembrar do seu transfer com a BrumaTaxi:\n\n${linhas.join('\n')}\n\nEstaremos à disposição no horário combinado.\n\nCom carinho,\n${config.assinaturaNome}`;
   }
 
   function reviewMessage(b) {
-    return `Olá, ${b.nome}! Esperamos que sua viagem com a BrumaTaxi tenha sido tranquila. Se puder, deixe sua avaliação — isso nos ajuda muito a melhorar. Obrigado pela confiança!\n\nCom carinho,\n${config.assinaturaNome}\n*${config.assinaturaEmpresa}*`;
+    return `Olá, ${b.nome}! Esperamos que sua viagem com a BrumaTaxi tenha sido tranquila. Se puder, deixe sua avaliação — isso nos ajuda muito a melhorar:\n\nhttps://g.page/r/CeSpJKLSyL0ZEBE/review\n\nObrigado pela confiança!\n\nCom carinho,\n${config.assinaturaNome}\n*${config.assinaturaEmpresa}*`;
   }
 
   function buildDriverInfoForClientMessage(b) {
@@ -726,69 +738,93 @@
     ].join('\r\n');
   }
 
+  function proximoNumeroReserva() {
+    let max = 0;
+    bookings.forEach(x => { if (x.numeroReserva && x.numeroReserva > max) max = x.numeroReserva; });
+    return max + 1;
+  }
+
   function gerarVoucherPDF(id) {
     const b = bookings.find(x => x.id === id);
     if (!b) return;
     if (typeof window.jspdf === 'undefined') { showToast('Não foi possível carregar o gerador de PDF — confira sua internet e tente de novo.'); return; }
 
+    if (!b.numeroReserva) {
+      b.numeroReserva = proximoNumeroReserva();
+      saveBookings();
+    }
+
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    let y = 18;
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const MARGEM = 20;
+    const CENTRO = pageWidth / 2;
+
+    const PAGINA_BG = [250, 240, 212];
+    const SECAO_BG = [240, 216, 155];
+    const NAVY = [18, 49, 78];
+    const TEXTO = [55, 45, 20];
+
+    doc.setFillColor(...PAGINA_BG);
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    let y = 16;
 
     try {
       const logoEl = document.querySelector('.logo-img');
-      if (logoEl && logoEl.src) doc.addImage(logoEl.src, 'PNG', 15, y, 55, 22.5);
+      if (logoEl && logoEl.src) {
+        const logoW = 65, logoH = 26.7;
+        doc.addImage(logoEl.src, 'PNG', CENTRO - logoW / 2, y, logoW, logoH);
+        y += logoH;
+      }
     } catch (e) { /* segue sem a logo se der algum problema */ }
-    y += 32;
-
-    doc.setDrawColor(200, 180, 140);
-    doc.line(15, y, pageWidth - 15, y);
-    y += 10;
-
-    doc.setFontSize(16);
-    doc.setFont(undefined, 'bold');
-    doc.setTextColor(18, 49, 78);
-    doc.text('Voucher de Confirmação de Transfer', 15, y);
-    y += 9;
-
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    doc.setTextColor(90, 90, 90);
-    doc.text('Código: ' + b.id, 15, y);
     y += 8;
 
-    doc.setFontSize(11);
-    doc.setTextColor(30, 30, 30);
-    doc.setFont(undefined, 'bold');
-    doc.text('Cliente:', 15, y);
-    doc.setFont(undefined, 'normal');
-    doc.text(b.nome, 48, y);
-    y += 6;
-    doc.setFont(undefined, 'bold');
-    doc.text('WhatsApp:', 15, y);
-    doc.setFont(undefined, 'normal');
-    doc.text(b.telefone, 48, y);
+    doc.setDrawColor(...NAVY);
+    doc.setLineWidth(0.5);
+    doc.line(MARGEM + 20, y, pageWidth - MARGEM - 20, y);
     y += 10;
 
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(...NAVY);
+    doc.text('Voucher de Confirmação de Transfer', CENTRO, y, { align: 'center' });
+    y += 6;
+
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(...TEXTO);
+    doc.text('Reserva Nº ' + String(b.numeroReserva).padStart(4, '0'), CENTRO, y, { align: 'center' });
+    y += 10;
+
+    doc.setFontSize(10.5);
+    doc.setTextColor(...NAVY);
+    doc.text(`Cliente:  ${b.nome}          WhatsApp:  ${b.telefone}`, CENTRO, y, { align: 'center' });
+    y += 12;
+
+    const TOP_PAD = 15, LINE_H = 7.2, BOTTOM_PAD = 9;
+
     function desenharSecao(titulo, campos) {
-      doc.setFillColor(247, 238, 223);
-      doc.rect(15, y - 5.5, pageWidth - 30, 8, 'F');
+      const altura = TOP_PAD + (campos.length - 1) * LINE_H + BOTTOM_PAD;
+      doc.setFillColor(...SECAO_BG);
+      doc.roundedRect(MARGEM, y, pageWidth - 2 * MARGEM, altura, 3, 3, 'F');
       doc.setFont(undefined, 'bold');
-      doc.setFontSize(11.5);
-      doc.setTextColor(150, 105, 40);
-      doc.text(titulo, 18, y);
-      y += 9;
-      doc.setFontSize(10.5);
+      doc.setFontSize(11);
+      doc.setTextColor(...NAVY);
+      doc.text(titulo, MARGEM + 6, y + 9);
+      let yy = y + TOP_PAD;
       campos.forEach(([label, valor]) => {
         doc.setFont(undefined, 'bold');
-        doc.setTextColor(30, 30, 30);
-        doc.text(label + ':', 18, y);
+        doc.setFontSize(9.5);
+        doc.setTextColor(...NAVY);
+        doc.text(label + ':', MARGEM + 6, yy);
         doc.setFont(undefined, 'normal');
-        doc.text(String(valor || '-'), 55, y);
-        y += 6;
+        doc.setTextColor(...TEXTO);
+        doc.text(String(valor || '-'), MARGEM + 42, yy);
+        yy += LINE_H;
       });
-      y += 6;
+      y += altura + 8;
     }
 
     if (b.in) {
@@ -811,32 +847,35 @@
         ['Passageiros', b.out.passageiros]
       ]);
     }
-    if (b.motorista) {
-      desenharSecao('MOTORISTA DESIGNADO', [
-        ['Nome', b.motorista.nome],
-        ['Contato', b.motorista.telefone],
-        ['Veículo', b.motorista.veiculo],
-        ['Placa', b.motorista.placa]
-      ]);
-    }
 
-    doc.setDrawColor(220, 220, 220);
-    doc.line(15, y, pageWidth - 15, y);
+    doc.setDrawColor(...NAVY);
+    doc.setLineWidth(0.5);
+    doc.line(MARGEM + 20, y, pageWidth - MARGEM - 20, y);
     y += 8;
-    doc.setFontSize(9.5);
-    doc.setTextColor(90, 90, 90);
-    doc.setFont(undefined, 'normal');
-    const fechamentoLinhas = doc.splitTextToSize(config.textoFechamentoConfirmacao, pageWidth - 30);
-    doc.text(fechamentoLinhas, 15, y);
-    y += fechamentoLinhas.length * 5 + 8;
 
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(...TEXTO);
+    const linhasFechamento = config.textoFechamentoConfirmacao
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0 && !l.toLowerCase().includes('motorista'));
+    linhasFechamento.forEach(linha => {
+      doc.text(linha, CENTRO, y, { align: 'center' });
+      y += 5;
+    });
+
+    y += 6;
     doc.setFont(undefined, 'bold');
     doc.setFontSize(10.5);
-    doc.setTextColor(18, 49, 78);
-    doc.text(config.assinaturaNome, 15, y);
+    doc.setTextColor(...NAVY);
+    doc.text(config.assinaturaNome, CENTRO, y, { align: 'center' });
     y += 5;
+    doc.setFont(undefined, 'normal');
     doc.setFontSize(9);
-    doc.text(config.assinaturaEmpresa, 15, y);
+    doc.text(config.assinaturaEmpresa, CENTRO, y, { align: 'center' });
+    y += 5;
+    doc.text('Contato: (31) 99603-3244', CENTRO, y, { align: 'center' });
 
     doc.save('voucher-' + b.nome.replace(/\s+/g, '-') + '.pdf');
     showToast('Voucher gerado — anexe manualmente no WhatsApp.');
@@ -881,7 +920,7 @@
 
     if (monthBookings.length === 0) { showToast('Nenhum agendamento nesse mês para exportar.'); return; }
 
-    const linhas = [['Data', 'Cliente', 'WhatsApp', 'Tipo', 'Status', 'Valor do cliente (R$)', 'Motorista', 'Valor livre do motorista (R$)', 'Lucro (R$)']];
+    const linhas = [['Data', 'Cliente', 'WhatsApp', 'Tipo', 'Status', 'Forma de pagamento', 'Valor do cliente (R$)', 'Motorista', 'Valor livre do motorista (R$)', 'Lucro (R$)']];
     monthBookings.forEach(b => {
       linhas.push([
         formatDateFull(groupDate(b)),
@@ -889,6 +928,7 @@
         b.telefone,
         tipoLabel(b),
         statusLabel(b.status),
+        b.formaPagamento || '',
         receitaBooking(b) ? receitaBooking(b).toFixed(2).replace('.', ',') : '',
         b.motorista ? b.motorista.nome : '',
         b.motorista && b.motorista.valorLivre ? Number(b.motorista.valorLivre).toFixed(2).replace('.', ',') : '',
@@ -1011,8 +1051,12 @@
 
     if (b.valor) {
       const valor = document.createElement('div'); valor.className = 'card-leg';
-      valor.textContent = 'Valor: R$ ' + Number(b.valor).toFixed(2).replace('.', ',');
+      valor.textContent = 'Valor: R$ ' + Number(b.valor).toFixed(2).replace('.', ',') + (b.formaPagamento ? ' · ' + b.formaPagamento : '');
       card.appendChild(valor);
+    } else if (b.formaPagamento) {
+      const pag = document.createElement('div'); pag.className = 'card-leg';
+      pag.textContent = 'Pagamento: ' + b.formaPagamento;
+      card.appendChild(pag);
     }
     if (b.obs) {
       const obs = document.createElement('div'); obs.className = 'card-obs'; obs.textContent = b.obs;
@@ -1150,6 +1194,14 @@
     pill.addEventListener('click', () => setTipo(pill.dataset.tipo));
   });
 
+  let pagamentoSelecionado = '';
+  document.querySelectorAll('.pagamento-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      pagamentoSelecionado = pill.dataset.pagamento;
+      document.querySelectorAll('.pagamento-pill').forEach(p => p.classList.toggle('active', p === pill));
+    });
+  });
+
   function dataBRParaISO(str) {
     if (!str) return '';
     const m = str.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
@@ -1160,7 +1212,7 @@
   function parseReservaTexto(texto) {
     const linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     let secao = null;
-    const result = { nome: '', telefone: '', obs: '', in: null, out: null };
+    const result = { nome: '', telefone: '', obs: '', formaPagamento: '', in: null, out: null };
 
     function garanteIn() { if (!result.in) result.in = { data: '', voo: '', horaChegada: '', origem: '', destino: '', passageiros: '' }; return result.in; }
     function garanteOut() { if (!result.out) result.out = { data: '', voo: '', horaSaida: '', origem: '', destino: '', passageiros: '' }; return result.out; }
@@ -1179,6 +1231,7 @@
       if (chave.includes('cliente')) { result.nome = valor; return; }
       if (chave.includes('whatsapp')) { result.telefone = valor; return; }
       if (chave.includes('observ')) { result.obs = valor; return; }
+      if (chave.includes('forma de pagamento')) { result.formaPagamento = valor; return; }
       if (chave.includes('horario previsto de chegada')) { garanteIn().horaChegada = valor; return; }
       if (chave.includes('horario de saida')) { garanteOut().horaSaida = valor; return; }
       if (chave === 'data') { if (secao === 'in') garanteIn().data = valor; else if (secao === 'out') garanteOut().data = valor; return; }
@@ -1231,6 +1284,8 @@
       document.getElementById('outPassageiros').value = dados.out.passageiros || '';
     }
     document.getElementById('obs').value = dados.obs || '';
+    pagamentoSelecionado = dados.formaPagamento || '';
+    document.querySelectorAll('.pagamento-pill').forEach(p => p.classList.toggle('active', p.dataset.pagamento === pagamentoSelecionado));
 
     document.getElementById('pasteReservaInput').value = '';
     document.getElementById('pastePanel').classList.add('hidden');
@@ -1268,6 +1323,8 @@
     }
     document.getElementById('valor').value = b.valor || '';
     document.getElementById('obs').value = b.obs || '';
+    pagamentoSelecionado = b.formaPagamento || '';
+    document.querySelectorAll('.pagamento-pill').forEach(p => p.classList.toggle('active', p.dataset.pagamento === pagamentoSelecionado));
 
     document.getElementById('submitBtn').textContent = 'Salvar alterações';
     document.getElementById('cancelEditBtn').classList.remove('hidden');
@@ -1313,6 +1370,8 @@
     editingId = null;
     document.getElementById('bookingForm').reset();
     setTipo('both');
+    pagamentoSelecionado = '';
+    document.querySelectorAll('.pagamento-pill').forEach(p => p.classList.remove('active'));
     document.getElementById('inOrigem').value = 'Aeroporto de Confins (CNF)';
     document.getElementById('inDestino').value = 'Clara Arte Resort';
     document.getElementById('outOrigem').value = 'Clara Arte Resort';
@@ -1375,6 +1434,7 @@
     const telefone = document.getElementById('telefone').value.trim();
     const valor = document.getElementById('valor').value;
     const obs = document.getElementById('obs').value.trim();
+    const formaPagamento = pagamentoSelecionado;
 
     if (!nome || !telefone) { showToast('Preencha cliente e WhatsApp.'); return; }
 
@@ -1409,7 +1469,7 @@
 
     if (editingId) {
       const b = bookings.find(x => x.id === editingId);
-      Object.assign(b, { nome, telefone, in: inLeg, out: outLeg, valor, obs });
+      Object.assign(b, { nome, telefone, in: inLeg, out: outLeg, valor, obs, formaPagamento });
       editingId = null;
       document.getElementById('submitBtn').textContent = 'Salvar agendamento';
       document.getElementById('cancelEditBtn').classList.add('hidden');
@@ -1417,7 +1477,7 @@
     } else {
       bookings.push({
         id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-        nome, telefone, in: inLeg, out: outLeg, valor, obs,
+        nome, telefone, in: inLeg, out: outLeg, valor, obs, formaPagamento,
         status: 'pendente', motorista: null,
         confirmacaoEnviada: false, lembreteEnviado: false, avaliacaoSolicitada: false,
         criadoEm: new Date().toISOString()
@@ -1429,6 +1489,8 @@
     render();
     this.reset();
     setTipo('both');
+    pagamentoSelecionado = '';
+    document.querySelectorAll('.pagamento-pill').forEach(p => p.classList.remove('active'));
     document.getElementById('inOrigem').value = 'Aeroporto de Confins (CNF)';
     document.getElementById('inDestino').value = 'Clara Arte Resort';
     document.getElementById('outOrigem').value = 'Clara Arte Resort';
